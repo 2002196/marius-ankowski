@@ -9,3 +9,7 @@ release/
 
 # local backups
 .github/workflows/*.bak.*
+
+# workflow backups / editor junk
+.github/workflows/*.bak*
+.github/workflows/*.save

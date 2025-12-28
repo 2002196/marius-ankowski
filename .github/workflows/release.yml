@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Tag/ref do release (np. v0.1.6)"
+        description: "Tag/ref do release (np. v0.2.8)"
         required: true
-        default: "v0.1.6"
+        default: "v0.2.8"
 
 permissions:
   contents: write
@@ -17,12 +17,13 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.ref || github.ref }}
+          ref: ${{ github.event.inputs.ref || github.ref_name }}
 
       - name: Build source archives
         shell: bash
@@ -30,7 +31,7 @@ jobs:
           set -euo pipefail
           mkdir -p release
           ref="${GITHUB_REF#refs/tags/}"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             ref="${{ github.event.inputs.ref }}"
           fi
           repo="${GITHUB_REPOSITORY#*/}"
@@ -38,7 +39,7 @@ jobs:
           git archive --format=zip    --prefix="${repo}-${ref}/" -o "release/${repo}-${ref}.zip"    "$ref"
           ls -lah release
 
-      - name: Load signing key from secrets
+      - name: Load signing key (from secrets)
         shell: bash
         env:
           MI_SSH_SIGNING_KEY: ${{ secrets.MI_SSH_SIGNING_KEY }}

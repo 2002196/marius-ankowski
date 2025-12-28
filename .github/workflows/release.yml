@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Tag or ref to release (e.g. v0.1.6)"
+        description: "Tag/ref do release (np. v0.1.6)"
         required: true
         default: "v0.1.6"
 
@@ -62,7 +62,8 @@ jobs:
             -s release/SHA256SUMS.sig < release/SHA256SUMS
           ( cd release && sha256sum -c SHA256SUMS )
 
-      - name: Upload Release assets
+      - name: Upload GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.ref || github.ref_name }}
           files: release/*

@@ -24,7 +24,6 @@ jobs:
           mkdir -p release
           tag="${GITHUB_REF#refs/tags/}"
           repo="${GITHUB_REPOSITORY#*/}"
-
           git archive --format=tar.gz --prefix="${repo}-${tag}/" -o "release/${repo}-${tag}.tar.gz" "$tag"
           git archive --format=zip    --prefix="${repo}-${tag}/" -o "release/${repo}-${tag}.zip"    "$tag"
           ls -lah release
@@ -58,8 +57,6 @@ EOF
           else
             ssh-add "$keyfile"
           fi
-
-          ssh-add -l
 
       - name: Sign release (SHA256SUMS + SSH signature) + verify
         shell: bash

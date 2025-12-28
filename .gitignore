@@ -6,3 +6,6 @@ release/
 release/
 # editor backups
 *.save
+
+# local backups
+.github/workflows/*.bak.*

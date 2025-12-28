@@ -66,4 +66,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.ref || github.ref_name }}
-          files: release/*
+          files: |
+            release/*
+            allowed_signers.example
+            RELEASE_VERIFY.md
+            verify_release.sh

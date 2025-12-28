@@ -1,4 +1,4 @@
-name: Release (smoke test)
+name: Release (signed)
 
 on:
   push:
@@ -9,11 +9,50 @@ permissions:
   contents: write
 
 jobs:
-  smoke:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Smoke
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build source archives
         shell: bash
         run: |
           set -euo pipefail
-          echo "Release workflow parsed & running: ${GITHUB_REF}"
+          mkdir -p release
+          tag="${GITHUB_REF#refs/tags/}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          git archive --format=tar.gz --prefix="${repo}-${tag}/" -o "release/${repo}-${tag}.tar.gz" "$tag"
+          git archive --format=zip    --prefix="${repo}-${tag}/" -o "release/${repo}-${tag}.zip"    "$tag"
+          ls -lah release
+
+      - name: Load signing key from secrets
+        shell: bash
+        env:
+          MI_SSH_SIGNING_KEY: ${{ secrets.MI_SSH_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "${MI_SSH_SIGNING_KEY:-}" ]] || { echo "Missing secret MI_SSH_SIGNING_KEY"; exit 1; }
+          mkdir -p "$HOME/.ssh"
+          keyfile="$HOME/.ssh/mi_signing_key"
+          printf "%s\n" "$MI_SSH_SIGNING_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          eval "$(ssh-agent -s)"
+          ssh-add "$keyfile"
+
+      - name: Sign + verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./tools/sign_release.sh sign release "mariusankowski@gmail.com" "$HOME/.ssh/mi_signing_key" "mi-release"
+          ssh-keygen -Y verify -f allowed_signers.example \
+            -I "mariusankowski@gmail.com" -n "mi-release" \
+            -s release/SHA256SUMS.sig < release/SHA256SUMS
+          ( cd release && sha256sum -c SHA256SUMS )
+
+      - name: Upload Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

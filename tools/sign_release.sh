@@ -3,84 +3,77 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage:
-  sign_release.sh sign   <dir> [identity] [key] [namespace]
-  sign_release.sh verify <dir> [identity] [namespace] [allowed_signers]
+Sign/verify release artifacts with OpenSSH signatures.
 
-Defaults:
-  dir            = release
-  identity       = mariusankowski@gmail.com
-  key            = ~/.ssh/id_ed25519
-  namespace      = mi-release
-  allowed_signers= ~/.config/git/allowed_signers
+Commands:
+  sign   <dir> <identity> <keyfile> <namespace> [allowed_signers]
+  verify <dir> <identity> <namespace> <allowed_signers>
+
+Outputs inside <dir>:
+  SHA256SUMS
+  SHA256SUMS.sig
 
 Examples:
-  ./tools/sign_release.sh sign release
-  ./tools/sign_release.sh verify release
+  ./tools/sign_release.sh sign   release "mariusankowski@gmail.com" ~/.ssh/id_ed25519_ci_sign_nopass mi-release allowed_signers.example
+  ./tools/sign_release.sh verify release "mariusankowski@gmail.com" mi-release allowed_signers.example
 EOF
 }
 
-MODE="${1:-}"
-DIR="${2:-release}"
+die(){ echo "ERROR: $*" >&2; exit 1; }
 
-IDENTITY_DEFAULT="mariusankowski@gmail.com"
-KEY_DEFAULT="$HOME/.ssh/id_ed25519"
-NS_DEFAULT="mi-release"
-ALLOWED_DEFAULT="$HOME/.config/git/allowed_signers"
+cmd="${1:-}"; shift || true
 
-case "$MODE" in
+case "$cmd" in
   sign)
-    IDENTITY="${3:-$IDENTITY_DEFAULT}"
-    KEY="${4:-$KEY_DEFAULT}"
-    NS="${5:-$NS_DEFAULT}"
+    dir="${1:-}"; identity="${2:-}"; keyfile="${3:-}"; namespace="${4:-}"; allowed="${5:-allowed_signers.example}"
+    [[ -n "$dir" && -n "$identity" && -n "$keyfile" && -n "$namespace" ]] || { usage; exit 2; }
+    [[ -d "$dir" ]] || die "dir not found: $dir"
+    [[ -f "$keyfile" ]] || die "keyfile not found: $keyfile"
 
-    [[ -d "$DIR" ]] || { echo "No such dir: $DIR" >&2; exit 1; }
-    [[ -f "$KEY" ]] || { echo "Missing private key: $KEY" >&2; exit 1; }
+    # Prefer repo file if present
+    if [[ -f "$allowed" ]]; then
+      allowed_path="$allowed"
+    elif [[ -f "$PWD/$allowed" ]]; then
+      allowed_path="$PWD/$allowed"
+    else
+      allowed_path=""
+    fi
 
-    pushd "$DIR" >/dev/null
+    (
+      cd "$dir"
+      # hash all files in dir except the summary itself + signature
+      find . -maxdepth 1 -type f ! -name 'SHA256SUMS' ! -name 'SHA256SUMS.sig' -print0 \
+        | sort -z \
+        | xargs -0 sha256sum > SHA256SUMS
 
-    rm -f SHA256SUMS SHA256SUMS.sig
+      echo "Signing file SHA256SUMS"
+      ssh-keygen -Y sign -f "$keyfile" -n "$namespace" -I "$identity" SHA256SUMS >/dev/null
 
-    shopt -s nullglob
-    files=()
-    while IFS= read -r -d '' f; do files+=("$f"); done < <(find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -print0 | sort -z)
-    [[ ${#files[@]} -gt 0 ]] || { echo "No files to sign in $DIR" >&2; exit 1; }
+      echo "Write signature to SHA256SUMS.sig"
+      [[ -f SHA256SUMS.sig ]] || die "Expected SHA256SUMS.sig not created"
+    )
 
-    sha256sum "${files[@]}" > SHA256SUMS
-    ssh-keygen -Y sign -f "$KEY" -n "$NS" SHA256SUMS >/dev/null
+    # Optional self-verify if allowed signers exists
+    if [[ -n "${allowed_path:-}" ]]; then
+      echo "Self-verify using allowed signers: $allowed_path"
+      ssh-keygen -Y verify -f "$allowed_path" -I "$identity" -n "$namespace" -s "$dir/SHA256SUMS.sig" < "$dir/SHA256SUMS" >/dev/null
+    fi
 
-    echo "OK: created $DIR/SHA256SUMS and $DIR/SHA256SUMS.sig"
-    echo "Verify:"
-    echo "  ./tools/sign_release.sh verify $DIR '$IDENTITY' '$NS' '$ALLOWED_DEFAULT'"
-
-    popd >/dev/null
+    echo "OK: created $dir/SHA256SUMS and $dir/SHA256SUMS.sig"
     ;;
-
   verify)
-    IDENTITY="${3:-$IDENTITY_DEFAULT}"
-    NS="${4:-$NS_DEFAULT}"
-    ALLOWED="${5:-$ALLOWED_DEFAULT}"
+    dir="${1:-}"; identity="${2:-}"; namespace="${3:-}"; allowed="${4:-}"
+    [[ -n "$dir" && -n "$identity" && -n "$namespace" && -n "$allowed" ]] || { usage; exit 2; }
+    [[ -f "$allowed" ]] || die "allowed_signers not found: $allowed"
+    [[ -f "$dir/SHA256SUMS" && -f "$dir/SHA256SUMS.sig" ]] || die "missing SHA256SUMS(.sig) in: $dir"
 
-    [[ -d "$DIR" ]] || { echo "No such dir: $DIR" >&2; exit 1; }
-    [[ -f "$ALLOWED" ]] || { echo "Missing allowed_signers: $ALLOWED" >&2; exit 1; }
-
-    pushd "$DIR" >/dev/null
-    [[ -f SHA256SUMS && -f SHA256SUMS.sig ]] || { echo "Missing SHA256SUMS or SHA256SUMS.sig in $DIR" >&2; exit 1; }
-
-    ssh-keygen -Y verify -f "$ALLOWED" -I "$IDENTITY" -n "$NS" -s SHA256SUMS.sig < SHA256SUMS
-    sha256sum -c SHA256SUMS
-
-    echo "OK: signature + hashes verified."
-    popd >/dev/null
+    ssh-keygen -Y verify -f "$allowed" -I "$identity" -n "$namespace" -s "$dir/SHA256SUMS.sig" < "$dir/SHA256SUMS"
+    ( cd "$dir" && sha256sum -c SHA256SUMS )
     ;;
-
-  ""|-h|--help|help)
+  -h|--help|"")
     usage
     ;;
-
   *)
-    echo "Unknown mode: $MODE" >&2
-    usage
-    exit 1
+    die "Unknown command: $cmd"
     ;;
 esac

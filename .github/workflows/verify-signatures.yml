@@ -62,7 +62,6 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
 
-          # wait for release to appear (race with Release workflow)
           for i in {1..24}; do
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               break

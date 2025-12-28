@@ -23,7 +23,6 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --force --tags origin
-          git show-ref --tags | tail -n 20 || true
 
       - name: Configure git SSH signature verification
         shell: bash
@@ -33,7 +32,7 @@ jobs:
           git config --global gpg.format ssh
           git config --global gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/allowed_signers.example"
 
-      - name: Verify tag or commit
+      - name: Verify tag or commit (A: warn+skip lightweight tags)
         shell: bash
         run: |
           set -euo pipefail
@@ -45,7 +44,7 @@ jobs:
             echo "tag=$tag type=$ttype"
 
             if [[ "$ttype" != "tag" ]]; then
-              echo "::warning::Tag  is lightweight or tag object missing (type=). Skipping verify-tag."
+              echo "::warning::Tag $tag is lightweight or tag object missing (type=$ttype). Skipping verify-tag."
               exit 0
             fi
 
@@ -53,3 +52,44 @@ jobs:
           else
             git verify-commit HEAD
           fi
+
+      - name: Verify release assets (B: SHA256SUMS.sig + sha256sum -c)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+
+          # wait for release to appear (race with Release workflow)
+          for i in {1..24}; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::warning::Release $tag not found yet. Skipping asset verification."
+            exit 0
+          fi
+
+          rm -rf _rel && mkdir -p _rel
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir _rel
+
+          test -f _rel/SHA256SUMS
+          test -f _rel/SHA256SUMS.sig
+
+          if [[ -f _rel/allowed_signers.example ]]; then
+            allowed="_rel/allowed_signers.example"
+          else
+            allowed="allowed_signers.example"
+            echo "::warning::allowed_signers.example not present in release assets; using repo copy."
+          fi
+
+          ssh-keygen -Y verify -f "$allowed" \
+            -I "mariusankowski@gmail.com" -n "mi-release" \
+            -s _rel/SHA256SUMS.sig < _rel/SHA256SUMS
+
+          ( cd _rel && sha256sum -c SHA256SUMS )

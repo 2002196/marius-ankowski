@@ -3,34 +3,58 @@ name: Verify release assets
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag do weryfikacji (np. v0.2.12)"
+        required: true
+        default: "v0.2.12"
 
 permissions:
   contents: read
 
 jobs:
-  verify_release_assets:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (for allowed_signers.example in repo)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download release assets + verify signature + sha256
+      - name: Verify release assets (download + SSH signature + SHA256)
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          repo="${GITHUB_REPOSITORY}"
+          repo="$REPO"
+          tag="$TAG"
 
           tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
           cd "$tmp"
 
-          gh release download "$tag" --repo "$repo" \
-            -p "SHA256SUMS" -p "SHA256SUMS.sig" -p "allowed_signers.example" \
-            -p "*.tar.gz" -p "*.zip"
+          echo "Repo=$repo Tag=$tag"
+          echo "Downloading release assets (with retry)..."
+
+          # Retry, bo czasem publish i assets nie są “widoczne” natychmiast
+          ok=0
+          for i in {1..12}; do
+            if gh release download "$tag" --repo "$repo" \
+              -p "SHA256SUMS" -p "SHA256SUMS.sig" -p "allowed_signers.example" \
+              -p "*.tar.gz" -p "*.zip"
+            then
+              ok=1
+              break
+            fi
+            echo "Not ready yet, retry $i/12..."
+            sleep 10
+          done
+
+          if [[ "$ok" != "1" ]]; then
+            echo "::error::Could not download release assets after retries"
+            exit 1
+          fi
+
+          ls -lah
 
           ssh-keygen -Y verify -f allowed_signers.example \
             -I "mariusankowski@gmail.com" -n "mi-release" \

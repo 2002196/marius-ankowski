@@ -19,4 +19,5 @@ ssh-keygen -Y verify -f allowed_signers.example \
   -I "mariusankowski@gmail.com" -n "mi-release" \
   -s SHA256SUMS.sig < SHA256SUMS
 
+sha256sum -c SHA256SUMS
 

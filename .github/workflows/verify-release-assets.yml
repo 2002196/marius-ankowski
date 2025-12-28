@@ -1,0 +1,39 @@
+name: Verify release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify_release_assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for allowed_signers.example in repo)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release assets + verify signature + sha256
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          repo="${GITHUB_REPOSITORY}"
+
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+
+          gh release download "$tag" --repo "$repo" \
+            -p "SHA256SUMS" -p "SHA256SUMS.sig" -p "allowed_signers.example" \
+            -p "*.tar.gz" -p "*.zip"
+
+          ssh-keygen -Y verify -f allowed_signers.example \
+            -I "mariusankowski@gmail.com" -n "mi-release" \
+            -s SHA256SUMS.sig < SHA256SUMS
+
+          sha256sum -c SHA256SUMS

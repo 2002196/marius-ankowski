@@ -1,0 +1,8 @@
+# local release artifacts
+release/
+# editor backups
+*.save
+# local release artifacts
+release/
+# editor backups
+*.save

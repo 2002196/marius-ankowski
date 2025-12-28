@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Tag/ref do release (np. v0.2.8)"
+        description: "Tag/ref do release (np. v0.2.12)"
         required: true
-        default: "v0.2.8"
+        default: "v0.2.12"
 
 permissions:
   contents: write
@@ -17,24 +17,22 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-
+    env:
+      TARGET_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
     steps:
       - name: Checkout (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.ref || github.ref_name }}
+          ref: ${{ env.TARGET_REF }}
 
       - name: Build source archives
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release
-          ref="${GITHUB_REF#refs/tags/}"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            ref="${{ github.event.inputs.ref }}"
-          fi
           repo="${GITHUB_REPOSITORY#*/}"
+          ref="${TARGET_REF}"
           git archive --format=tar.gz --prefix="${repo}-${ref}/" -o "release/${repo}-${ref}.tar.gz" "$ref"
           git archive --format=zip    --prefix="${repo}-${ref}/" -o "release/${repo}-${ref}.zip"    "$ref"
           ls -lah release
@@ -53,7 +51,7 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add "$keyfile"
 
-      - name: Sign + verify
+      - name: Sign release (SHA256SUMS + SSH signature) + verify
         shell: bash
         run: |
           set -euo pipefail
@@ -66,7 +64,7 @@ jobs:
       - name: Upload GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.ref || github.ref_name }}
+          tag_name: ${{ env.TARGET_REF }}
           files: |
             release/*
             allowed_signers.example

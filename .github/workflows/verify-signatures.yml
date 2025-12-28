@@ -60,4 +60,15 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
           echo "verify-tag $tag"
-          git verify-tag "$tag"
+          
+if git cat-file -t "$tag" | grep -qx "tag"; then
+
+  git verify-tag "$tag"
+
+else
+
+  echo "::error::Tag $tag is lightweight (type commit). Create a SIGNED annotated tag: git tag -s $tag -m "$tag" && git push origin $tag"
+
+  exit 1
+
+fi

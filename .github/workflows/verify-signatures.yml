@@ -88,8 +88,6 @@ jobs:
             echo "::warning::allowed_signers.example not present in release assets; using repo copy."
           fi
 
-          ssh-keygen -Y verify -f "$allowed" \
-            -I "mariusankowski@gmail.com" -n "mi-release" \
-            -s _rel/SHA256SUMS.sig < _rel/SHA256SUMS
+          ssh-keygen -Y verify -f "$allowed"             -I "mariusankowski@gmail.com" -n "mi-release"             -s _rel/SHA256SUMS.sig < _rel/SHA256SUMS
 
           ( cd _rel && sha256sum -c SHA256SUMS )

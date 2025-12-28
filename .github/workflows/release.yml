@@ -71,3 +71,4 @@ jobs:
             allowed_signers.example
             RELEASE_VERIFY.md
             verify_release.sh
+            verify_offline.sh
